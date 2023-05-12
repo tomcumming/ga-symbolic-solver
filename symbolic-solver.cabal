@@ -13,12 +13,12 @@ extra-doc-files: CHANGELOG.md
 common shared
     ghc-options: -Wall
     default-language: GHC2021
-    default-extensions: MultiWayIf
-    build-depends: base ^>=4.16, containers
+    default-extensions: MultiWayIf, LambdaCase
+    build-depends: base ^>=4.16, containers, mtl
 
 library
     import: shared
-    exposed-modules: Symbolic.Scalar
+    exposed-modules: Symbolic.Scalar, Symbolic.GA
     hs-source-dirs: src
 
 test-suite symbolic-solver-test

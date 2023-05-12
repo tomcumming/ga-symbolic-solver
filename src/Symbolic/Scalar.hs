@@ -1,6 +1,7 @@
 module Symbolic.Scalar
   ( Power,
     Scalar,
+    fromRat,
     var,
   )
 where
@@ -15,7 +16,7 @@ type Power = Int
 
 newtype Products v = Products (M.Map v Power) deriving (Eq, Ord)
 
-newtype Scalar v = Scalar (M.Map (Products v) Rational)
+newtype Scalar v = Scalar (M.Map (Products v) Rational) deriving (Eq, Ord)
 
 instance Show v => Show (Products v) where
   showsPrec d (Products ps)
@@ -50,6 +51,9 @@ fromPowers = Products . M.filter (/= 0)
 fromProducts :: M.Map (Products v) Rational -> Scalar v
 fromProducts = Scalar . M.filter (/= 0)
 
+fromRat :: Ord v => Rational -> Scalar v
+fromRat = fromProducts . M.singleton (Products mempty)
+
 var :: v -> Scalar v
 var v = fromProducts $ M.singleton (fromPowers $ M.singleton v 1) 1
 
@@ -62,7 +66,7 @@ instance Ord v => Num (Scalar v) where
     (lp, lr) <- M.toList l
     (rp, rr) <- M.toList r
     pure (mulProducts lp rp, lr * rr)
-  abs = undefined
-  signum = undefined
+  abs = error "Scalar abs"
+  signum = error "Scalar signum"
   fromInteger = fromProducts . M.singleton (fromPowers mempty) . fromInteger
   negate = (* fromInteger (-1))
