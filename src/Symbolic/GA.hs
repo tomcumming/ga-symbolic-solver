@@ -5,6 +5,7 @@ module Symbolic.GA
     fromRat,
     var,
     basis,
+    revers,
     calculate,
   )
 where
@@ -20,7 +21,7 @@ import Symbolic.Scalar qualified as Sc
 
 newtype Elem b = Elem (S.Set b) deriving (Eq, Ord)
 
-newtype MV b v = MV (M.Map (Elem b) (Scalar v))
+newtype MV b v = MV (M.Map (Elem b) (Scalar v)) deriving (Eq, Ord)
 
 newtype GAM b a = GAM ((b -> Rational) -> a) deriving (Functor, Applicative, Monad)
 
@@ -84,8 +85,13 @@ var = pure . fromScalar . Sc.var
 basis :: (Ord v, Ord b) => b -> GA b v
 basis = pure . fromElems . (`M.singleton` 1) . Elem . S.singleton
 
+revers :: Ord v => GA b v -> GA b v
+revers = fmap $ \(MV mv) -> MV $ M.mapWithKey go mv
+  where
+    go (Elem bs) s = s * if S.size bs `mod` 4 > 1 then -1 else 1
+
 calculate :: (b -> Rational) -> GA b v -> MV b v
-calculate basis (GAM ga) = ga basis
+calculate bas (GAM ga) = ga bas
 
 instance (Ord v, Ord b) => Num (GA b v) where
   lga + rga = do

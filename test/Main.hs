@@ -1,9 +1,9 @@
 module Main (main) where
 
-import Symbolic.GA (GA, basis, calculate)
+import Symbolic.GA (GA, basis, calculate, revers, var)
 import Symbolic.Scalar qualified as Scalar
 import Test.Tasty (TestTree, defaultMain, testGroup)
-import Test.Tasty.HUnit (testCase, (@?=))
+import Test.Tasty.HUnit (assertBool, testCase, (@?=))
 
 main :: IO ()
 main = defaultMain scalarTests
@@ -12,7 +12,7 @@ scalarTests :: TestTree
 scalarTests =
   testGroup
     "Scalar Tests"
-    [scalarShow, gaShow]
+    [scalarShow, gaShow, gaReverse]
 
 data Var
   = A
@@ -64,3 +64,33 @@ gaShow =
   where
     showTest :: GA Basis Var -> String -> TestTree
     showTest ga str = testCase str $ show (calculate squareBasis ga) @?= str
+
+gaReverse :: TestTree
+gaReverse =
+  testGroup
+    "GA Reverse"
+    [ testIdentity (123 * var A),
+      testIdentity (basis E0),
+      testIdentity (basis E2),
+      testChanged (basis E0 * basis E1) (basis E1 * basis E0),
+      testChanged (basis E1 * basis E0) (basis E0 * basis E1),
+      testChanged (basis E1 * basis E2) (basis E2 * basis E1),
+      testChanged
+        (basis E0 * basis E1 * basis E2)
+        (basis E2 * basis E1 * basis E0)
+    ]
+  where
+    testIdentity :: GA Basis Var -> TestTree
+    testIdentity ga =
+      let mv = calculate squareBasis ga
+          mv' = calculate squareBasis (revers ga)
+       in testCase ("Identity " <> show mv) $ mv' @?= mv
+
+    testChanged :: GA Basis Var -> GA Basis Var -> TestTree
+    testChanged ga ga' =
+      let original = calculate squareBasis ga
+          mv = calculate squareBasis (revers ga)
+          mv' = calculate squareBasis ga'
+       in testCase ("Reverse " <> show mv') $ do
+            assertBool "Examples are different" $ original /= mv
+            mv' @?= mv
