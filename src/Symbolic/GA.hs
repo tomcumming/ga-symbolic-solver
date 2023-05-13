@@ -1,11 +1,14 @@
 module Symbolic.GA
-  ( Elem,
+  ( Basis (..),
+    Elem,
     MV,
     GA,
     fromRat,
     var,
-    basis,
+    vec,
     revers,
+    dual,
+    undual,
     calculate,
   )
 where
@@ -23,7 +26,13 @@ newtype Elem b = Elem (S.Set b) deriving (Eq, Ord)
 
 newtype MV b v = MV (M.Map (Elem b) (Scalar v)) deriving (Eq, Ord)
 
-newtype GAM b a = GAM ((b -> Rational) -> a) deriving (Functor, Applicative, Monad)
+data Basis b = Basis
+  { basSquare :: b -> Rational,
+    -- | Pseudoscalar, aka all basis vectors
+    basPss :: S.Set b
+  }
+
+newtype GAM b a = GAM (Basis b -> a) deriving (Functor, Applicative, Monad)
 
 type GA b v = GAM b (MV b v)
 
@@ -48,7 +57,10 @@ instance (Show b, Show v, Ord v) => Show (MV b v) where
               $ S.toList es
 
 squareBasis :: b -> GAM b Rational
-squareBasis b = GAM $ \sqb -> sqb b
+squareBasis b = GAM $ \Basis {basSquare} -> basSquare b
+
+basisVectors :: GAM b (S.Set b)
+basisVectors = GAM $ \Basis {basPss} -> basPss
 
 mulElem :: forall b. Ord b => Elem b -> Elem b -> GAM b (Rational, Elem b)
 mulElem origL (Elem origR) = foldlM go (1, origL) origR
@@ -82,15 +94,47 @@ fromRat = pure . fromElems . M.singleton (Elem mempty) . Sc.fromRat
 var :: (Ord b, Ord v) => v -> GA b v
 var = pure . fromScalar . Sc.var
 
-basis :: (Ord v, Ord b) => b -> GA b v
-basis = pure . fromElems . (`M.singleton` 1) . Elem . S.singleton
+vec :: (Ord v, Ord b) => b -> GA b v
+vec = pure . fromElems . (`M.singleton` 1) . Elem . S.singleton
 
 revers :: Ord v => GA b v -> GA b v
 revers = fmap $ \(MV mv) -> MV $ M.mapWithKey go mv
   where
     go (Elem bs) s = s * if S.size bs `mod` 4 > 1 then -1 else 1
 
-calculate :: (b -> Rational) -> GA b v -> MV b v
+-- TODO there must be a smarter way
+dual' ::
+  forall b v.
+  (Ord v, Ord b) =>
+  (S.Set b -> Maybe (b, S.Set b)) ->
+  ((S.Set b, S.Set b) -> S.Set b) ->
+  GA b v ->
+  GA b v
+dual' view side ga = do
+  vs <- basisVectors
+  fmap
+    ( \(MV mv) ->
+        fromElems
+          . M.fromListWith (+)
+          . map (uncurry (elemDual vs))
+          $ M.toList mv
+    )
+    ga
+  where
+    elemDual :: S.Set b -> Elem b -> Scalar v -> (Elem b, Scalar v)
+    elemDual vs (Elem bs) s = case view bs of
+      Nothing -> (Elem vs, s)
+      Just (b, bs') ->
+        let flips = if odd . S.size $ side (S.split b vs) then -1 else 1
+         in elemDual (S.delete b vs) (Elem bs') (s * flips)
+
+dual :: forall b v. (Ord v, Ord b) => GA b v -> GA b v
+dual = dual' S.minView fst
+
+undual :: forall b v. (Ord v, Ord b) => GA b v -> GA b v
+undual = dual' S.maxView snd
+
+calculate :: Basis b -> GA b v -> MV b v
 calculate bas (GAM ga) = ga bas
 
 instance (Ord v, Ord b) => Num (GA b v) where

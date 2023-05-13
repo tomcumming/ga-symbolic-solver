@@ -1,6 +1,7 @@
 module Main (main) where
 
-import Symbolic.GA (GA, basis, calculate, revers, var)
+import Data.Set qualified as S
+import Symbolic.GA (Basis (..), GA, MV, calculate, dual, revers, undual, var, vec)
 import Symbolic.Scalar qualified as Scalar
 import Test.Tasty (TestTree, defaultMain, testGroup)
 import Test.Tasty.HUnit (assertBool, testCase, (@?=))
@@ -12,7 +13,7 @@ scalarTests :: TestTree
 scalarTests =
   testGroup
     "Scalar Tests"
-    [scalarShow, gaShow, gaReverse]
+    [scalarShow, gaShow, gaReverse, gaDualUndual, gaDualExamples]
 
 data Var
   = A
@@ -38,17 +39,23 @@ scalarShow =
     showTest :: Scalar.Scalar Var -> String -> TestTree
     showTest s str = testCase str $ show s @?= str
 
-data Basis
+data BasisVec
   = E0
   | E1
   | E2
+  | E3
   deriving (Show, Eq, Ord)
 
-squareBasis :: Basis -> Rational
-squareBasis = \case
-  E0 -> 0
-  E1 -> 1
-  E2 -> -1
+basis :: Basis BasisVec
+basis =
+  Basis
+    { basSquare = \case
+        E0 -> 0
+        E1 -> 1
+        E2 -> 1
+        E3 -> 1,
+      basPss = S.fromList [E0, E1, E2, E3]
+    }
 
 gaShow :: TestTree
 gaShow =
@@ -56,41 +63,82 @@ gaShow =
     "GA Show"
     [ showTest 0 "0",
       showTest 1 "1",
-      showTest (basis E0) "E0",
-      showTest (basis E0 * basis E1) "E0 * E1",
-      showTest (basis E1 * basis E0) "-1 * E0 * E1",
-      showTest ((basis E1 + 1) * basis E2) "E1 * E2 + E2"
+      showTest (vec E0) "E0",
+      showTest (vec E0 * vec E1) "E0 * E1",
+      showTest (vec E1 * vec E0) "-1 * E0 * E1",
+      showTest ((vec E1 + 1) * vec E2) "E1 * E2 + E2"
     ]
   where
-    showTest :: GA Basis Var -> String -> TestTree
-    showTest ga str = testCase str $ show (calculate squareBasis ga) @?= str
+    showTest :: GA BasisVec Var -> String -> TestTree
+    showTest ga str = testCase str $ show (calculate basis ga) @?= str
 
 gaReverse :: TestTree
 gaReverse =
   testGroup
     "GA Reverse"
     [ testIdentity (123 * var A),
-      testIdentity (basis E0),
-      testIdentity (basis E2),
-      testChanged (basis E0 * basis E1) (basis E1 * basis E0),
-      testChanged (basis E1 * basis E0) (basis E0 * basis E1),
-      testChanged (basis E1 * basis E2) (basis E2 * basis E1),
+      testIdentity (vec E0),
+      testIdentity (vec E2),
+      testChanged (vec E0 * vec E1) (vec E1 * vec E0),
+      testChanged (vec E1 * vec E0) (vec E0 * vec E1),
+      testChanged (vec E1 * vec E2) (vec E2 * vec E1),
       testChanged
-        (basis E0 * basis E1 * basis E2)
-        (basis E2 * basis E1 * basis E0)
+        (vec E0 * vec E1 * vec E2)
+        (vec E2 * vec E1 * vec E0)
     ]
   where
-    testIdentity :: GA Basis Var -> TestTree
+    testIdentity :: GA BasisVec Var -> TestTree
     testIdentity ga =
-      let mv = calculate squareBasis ga
-          mv' = calculate squareBasis (revers ga)
+      let mv = calculate basis ga
+          mv' = calculate basis (revers ga)
        in testCase ("Identity " <> show mv) $ mv' @?= mv
 
-    testChanged :: GA Basis Var -> GA Basis Var -> TestTree
+    testChanged :: GA BasisVec Var -> GA BasisVec Var -> TestTree
     testChanged ga ga' =
-      let original = calculate squareBasis ga
-          mv = calculate squareBasis (revers ga)
-          mv' = calculate squareBasis ga'
+      let original = calculate basis ga
+          mv = calculate basis (revers ga)
+          mv' = calculate basis ga'
        in testCase ("Reverse " <> show mv') $ do
             assertBool "Examples are different" $ original /= mv
             mv' @?= mv
+
+gaDualUndual :: TestTree
+gaDualUndual =
+  testGroup "UnDual . Dual"
+    $ map
+      ( \ga ->
+          let mv :: MV BasisVec Var = calculate basis ga
+              mv' = calculate basis (undual (dual ga))
+           in testCase (show mv) $ mv' @?= mv
+      )
+      . fmap (product . fmap vec . S.toList)
+    $ S.toList (S.powerSet (basPss basis))
+
+-- | Examples takes from PGA4CS
+gaDualExamples :: TestTree
+gaDualExamples =
+  testGroup "Dual Examples" $
+    map
+      ( \(ga, ga') ->
+          let original = calculate basis ga
+              mv :: MV BasisVec Var = calculate basis (dual ga)
+              mv' = calculate basis ga'
+           in testCase ("Dual " <> show original) $ mv @?= mv'
+      )
+      [ (1, vec E0 * vec E1 * vec E2 * vec E3),
+        (vec E0, vec E1 * vec E2 * vec E3),
+        (vec E1, vec E0 * vec E3 * vec E2),
+        (vec E2, vec E0 * vec E1 * vec E3),
+        (vec E3, vec E0 * vec E2 * vec E1),
+        (vec E0 * vec E1, vec E2 * vec E3),
+        (vec E0 * vec E2, vec E3 * vec E1),
+        (vec E0 * vec E3, vec E1 * vec E2),
+        (vec E2 * vec E3, vec E0 * vec E1),
+        (vec E3 * vec E1, vec E0 * vec E2),
+        (vec E1 * vec E2, vec E0 * vec E3),
+        (vec E1 * vec E2 * vec E3, -1 * vec E0),
+        (vec E0 * vec E3 * vec E2, -1 * vec E1),
+        (vec E0 * vec E1 * vec E3, -1 * vec E2),
+        (vec E0 * vec E2 * vec E1, -1 * vec E3),
+        (vec E0 * vec E1 * vec E2 * vec E3, 1)
+      ]
